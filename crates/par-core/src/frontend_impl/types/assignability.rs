@@ -501,10 +501,6 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
             return Ok(result);
         }
 
-        if let Some(result) = Type::is_subtype_box_positive(&type1, &type2, path1, path2, &ctx)? {
-            return Ok(result.ttl_dec());
-        }
-
         if let Some(result) = Type::is_subtype_expand_fixpoints(&type1, &type2, path1, path2, &ctx)?
         {
             return Ok(result);
@@ -555,46 +551,6 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
         }
     }
 
-    fn is_subtype_box_positive(
-        type1: &Type<S>,
-        type2: &Type<S>,
-        path1: &mut TypePath,
-        path2: &mut TypePath,
-        ctx: &SubtypeContext<S>,
-    ) -> Result<Option<SubtypeResult<S>>, TypeError<S>> {
-        match (type1, type2) {
-            (t1, Self::Box(_, t2))
-                if t1.satisfies_constraint(TypeConstraint::Share, ctx.type_defs)? =>
-            {
-                path2.push(TypePathSegment::BoxBody);
-                let res = Type::is_subtype_helper(
-                    t1.clone(),
-                    t2.as_ref().clone(),
-                    path1,
-                    path2,
-                    ctx.clone(),
-                )?;
-                path2.pop();
-                Ok(Some(res))
-            }
-            (Self::DualBox(_, t1), t2)
-                if t1.satisfies_constraint(TypeConstraint::Share, ctx.type_defs)? =>
-            {
-                path1.push(TypePathSegment::BoxBody);
-                let res = Type::is_subtype_helper(
-                    t1.as_ref().clone().dual(Span::None),
-                    t2.clone(),
-                    path1,
-                    path2,
-                    ctx.clone(),
-                )?;
-                path1.pop();
-                Ok(Some(res))
-            }
-            _ => Ok(None),
-        }
-    }
-
     fn is_subtype_cycle(
         pair: &(Type<S>, Type<S>),
         path1: &TypePath,
@@ -607,13 +563,16 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
         if debug_enabled() {
             debug_log_stack(ctx);
         }
+
         let min_left = ctx
             .visited
             .iter()
             .skip(ind)
             .map(|(t1, _t2)| t1)
             .filter(|t1| t1.is_fixpoint())
-            .filter_map(|t1| t1.size(ctx.type_defs).ok().map(|size| (size, t1)))
+            .map(|t1| t1.size(ctx.type_defs).map(|size| (size, t1)))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .min_by_key(|(size, _)| *size)
             .map(|(_, typ)| typ)
             .expect("minimum should exist");
@@ -623,7 +582,9 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
             .skip(ind)
             .map(|(_t1, t2)| t2)
             .filter(|t2| t2.is_fixpoint())
-            .filter_map(|t2| t2.size(ctx.type_defs).ok().map(|size| (size, t2)))
+            .map(|t2| t2.size(ctx.type_defs).map(|size| (size, t2)))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .min_by_key(|(size, _)| *size)
             .map(|(_, typ)| typ)
             .expect("minimum should exist");
@@ -814,12 +775,6 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                 path2.pop();
                 res
             }
-            (Self::Box(_, t1), t2) => {
-                path1.push(TypePathSegment::BoxBody);
-                let res = Type::is_subtype_helper(t1.as_ref().clone(), t2, path1, path2, ctx);
-                path1.pop();
-                res
-            }
             (Self::DualBox(_, t1), Self::DualBox(_, t2)) => {
                 let t1 = t1.as_ref().clone().dual(Span::None);
                 let t2 = t2.as_ref().clone().dual(Span::None);
@@ -827,13 +782,6 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                 path2.push(TypePathSegment::BoxBody);
                 let res = Type::is_subtype_helper(t1, t2, path1, path2, ctx);
                 path1.pop();
-                path2.pop();
-                res
-            }
-            (t1, Self::DualBox(_, t2)) => {
-                let t2 = t2.as_ref().clone().dual(Span::None);
-                path2.push(TypePathSegment::BoxBody);
-                let res = Type::is_subtype_helper(t1, t2, path1, path2, ctx);
                 path2.pop();
                 res
             }

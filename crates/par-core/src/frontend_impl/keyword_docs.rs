@@ -253,6 +253,28 @@ A `box T` can be used where `T` is expected. If `T` is already non-linear, it ca
 
 [Box types](https://par.run/book/types/box) | [Type constraints](https://par.run/book/types/constraints)"#,
         }),
+  TokenKind::Unbox => Some(KeywordDocumentation {
+      name: "unbox",
+      markdown: r#"Instantiate a boxed computation.
+
+Postfix `.unbox` turns a `box T` into a fresh value of type `T`. Each use starts the boxed computation again, so a box can be reused without sharing the result of an earlier instantiation:
+
+```par
+def Twice: Int =
+  let calculation = box 21 + 21 in
+  calculation.unbox + calculation.unbox
+```
+
+When the box contains a function, calling it implicitly unboxes it. Write `.unbox` explicitly when the resulting value must be used directly or when clarity is useful:
+
+```par
+def Total: Int = calculation.unbox
+```
+
+`box T` and `T` are distinct types. Use `.unbox` only on a boxed value; it is also available as a process command.
+
+[Box types](https://par.run/book/types/box)"#,
+  }),
         TokenKind::Module => Some(KeywordDocumentation {
             name: "module",
             markdown: r#"Declare the module defined by this source file.
